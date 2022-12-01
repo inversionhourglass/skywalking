@@ -137,6 +137,50 @@ public class BanyanDBMetricsQueryDAO extends AbstractBanyanDBDAO implements IMet
         return metricsValues;
     }
 
+    @Override
+    public MetricsValues readNonZeroMetricsValues(MetricsCondition condition, String valueColumnName, Duration duration) throws IOException {
+        String modelName = condition.getName();
+        MetadataRegistry.Schema schema = MetadataRegistry.INSTANCE.findMetadata(modelName);
+        if (schema == null) {
+            throw new IOException("schema is not registered");
+        }
+        final List<PointOfTime> pointOfTimes = duration.assembleDurationPoints();
+        final List<String> ids = pointOfTimes.stream().map(pointOfTime -> {
+            String id = pointOfTime.id(condition.getEntity().buildId());
+            return id;
+        }).collect(Collectors.toList());
+
+        final List<String> nonZeroIds = new ArrayList<>();
+        MetricsValues metricsValues = new MetricsValues();
+        Map<String, DataPoint> idMap = queryIDs(modelName, valueColumnName, ids);
+        if (!idMap.isEmpty()) {
+            // Label is null, because in readMetricsValues, no label parameter.
+            IntValues intValues = metricsValues.getValues();
+            for (String id : ids) {
+                KVInt kvInt = new KVInt();
+                kvInt.setId(id);
+                kvInt.setValue(0);
+                if (idMap.containsKey(id)) {
+                    DataPoint dataPoint = idMap.get(id);
+                    kvInt.setValue(extractFieldValue(schema, valueColumnName, dataPoint));
+                } else {
+                    kvInt.setValue(ValueColumnMetadata.INSTANCE.getDefaultValue(condition.getName()));
+                }
+                if (kvInt.getValue() != 0) {
+                    intValues.addKVInt(kvInt);
+                    nonZeroIds.add(id);
+                }
+            }
+        }
+
+        metricsValues.setValues(
+                Util.sortValues(
+                        metricsValues.getValues(), nonZeroIds, ValueColumnMetadata.INSTANCE.getDefaultValue(condition.getName()))
+        );
+
+        return metricsValues;
+    }
+
     private long extractFieldValue(MetadataRegistry.Schema schema, String fieldName, DataPoint dataPoint) throws IOException {
         MetadataRegistry.ColumnSpec spec = schema.getSpec(fieldName);
         if (spec == null) {

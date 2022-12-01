@@ -149,6 +149,59 @@ public class MetricsQueryEsDAO extends EsDAO implements IMetricsQueryDAO {
     }
 
     @Override
+    public MetricsValues readNonZeroMetricsValues(final MetricsCondition condition,
+                                           final String valueColumnName,
+                                           final Duration duration) {
+        final String realValueColumn = IndexController.LogicIndicesRegister.getPhysicalColumnName(condition.getName(), valueColumnName);
+        String tableName =
+                IndexController.LogicIndicesRegister.getPhysicalTableName(condition.getName());
+        final List<PointOfTime> pointOfTimes = duration.assembleDurationPoints();
+        Map<String, List<String>> indexIdsGroup = new HashMap<>();
+
+        final List<String> ids = pointOfTimes.stream().map(pointOfTime -> {
+            String id = pointOfTime.id(condition.getEntity().buildId());
+            if (IndexController.LogicIndicesRegister.isPhysicalTable(condition.getName())) {
+                id = IndexController.INSTANCE.generateDocId(condition.getName(), id);
+            }
+            String indexName = TimeSeriesUtils.queryIndexName(
+                    tableName, pointOfTime.getPoint(), duration.getStep(), false, false);
+            indexIdsGroup.computeIfAbsent(indexName, v -> new ArrayList<>()).add(id);
+            return id;
+        }).collect(Collectors.toList());
+
+        final List<String> nonZeroIds = new ArrayList<>();
+        MetricsValues metricsValues = new MetricsValues();
+        Optional<Documents> response = getClient().ids(indexIdsGroup);
+        if (response.isPresent()) {
+            Map<String, Map<String, Object>> idMap = toMap(response.get());
+
+            // Label is null, because in readMetricsValues, no label parameter.
+            IntValues intValues = metricsValues.getValues();
+            for (String id : ids) {
+                KVInt kvInt = new KVInt();
+                kvInt.setId(id);
+                kvInt.setValue(0);
+                if (idMap.containsKey(id)) {
+                    Map<String, Object> source = idMap.get(id);
+                    kvInt.setValue(((Number) source.getOrDefault(realValueColumn, 0)).longValue());
+                } else {
+                    kvInt.setValue(ValueColumnMetadata.INSTANCE.getDefaultValue(condition.getName()));
+                }
+                if (kvInt.getValue() != 0) {
+                    intValues.addKVInt(kvInt);
+                    nonZeroIds.add(id);
+                }
+            }
+        }
+        metricsValues.setValues(
+                Util.sortValues(
+                        metricsValues.getValues(), nonZeroIds, ValueColumnMetadata.INSTANCE.getDefaultValue(condition.getName()))
+        );
+
+        return metricsValues;
+    }
+
+    @Override
     public List<MetricsValues> readLabeledMetricsValues(final MetricsCondition condition,
                                                         final String valueColumnName,
                                                         final List<String> labels,

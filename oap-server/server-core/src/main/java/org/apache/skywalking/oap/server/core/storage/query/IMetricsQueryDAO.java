@@ -51,6 +51,10 @@ public interface IMetricsQueryDAO extends DAO {
                                     String valueColumnName,
                                     Duration duration) throws IOException;
 
+    MetricsValues readNonZeroMetricsValues(MetricsCondition condition,
+                                    String valueColumnName,
+                                    Duration duration) throws IOException;
+
     List<MetricsValues> readLabeledMetricsValues(MetricsCondition condition,
                                                  String valueColumnName,
                                                  List<String> labels,

@@ -146,6 +146,58 @@ public class H2MetricsQueryDAO extends H2SQLExecutor implements IMetricsQueryDAO
     }
 
     @Override
+    public MetricsValues readNonZeroMetricsValues(final MetricsCondition condition,
+                                           final String valueColumnName,
+                                           final Duration duration) throws IOException {
+        final List<PointOfTime> pointOfTimes = duration.assembleDurationPoints();
+        List<String> ids = new ArrayList<>(pointOfTimes.size());
+        pointOfTimes.forEach(pointOfTime -> {
+            ids.add(pointOfTime.id(condition.getEntity().buildId()));
+        });
+
+        StringBuilder sql = new StringBuilder(
+                "select id, " + valueColumnName + " from " + condition.getName() + " where id in (");
+        List<Object> parameters = new ArrayList();
+        for (int i = 0; i < ids.size(); i++) {
+            if (i == 0) {
+                sql.append("?");
+            } else {
+                sql.append(",?");
+            }
+            parameters.add(ids.get(i));
+        }
+        sql.append(")");
+
+        final List<String> nonZeroIds = new ArrayList<>();
+        MetricsValues metricsValues = new MetricsValues();
+        // Label is null, because in readMetricsValues, no label parameter.
+        final IntValues intValues = metricsValues.getValues();
+
+        try (Connection connection = h2Client.getConnection()) {
+
+            try (ResultSet resultSet = h2Client.executeQuery(
+                    connection, sql.toString(), parameters.toArray(new Object[0]))) {
+                while (resultSet.next()) {
+                    KVInt kv = new KVInt();
+                    kv.setId(resultSet.getString("id"));
+                    kv.setValue(resultSet.getLong(valueColumnName));
+                    if (kv.getValue() != 0) {
+                        intValues.addKVInt(kv);
+                        nonZeroIds.add(kv.getId());
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new IOException(e);
+        }
+
+        metricsValues.setValues(
+                Util.sortValues(intValues, nonZeroIds, ValueColumnMetadata.INSTANCE.getDefaultValue(condition.getName()))
+        );
+        return metricsValues;
+    }
+
+    @Override
     public List<MetricsValues> readLabeledMetricsValues(final MetricsCondition condition,
                                                         final String valueColumnName,
                                                         final List<String> labels,

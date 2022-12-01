@@ -64,6 +64,14 @@ public class MetricsQueryService implements Service {
     }
 
     /**
+     * Read time-series values in the duration of required metrics which is not 0
+     */
+    public MetricsValues readNonZeroMetricsValues(MetricsCondition condition, Duration duration) throws IOException {
+        return getMetricQueryDAO().readNonZeroMetricsValues(
+                condition, ValueColumnMetadata.INSTANCE.getValueCName(condition.getName()), duration);
+    }
+
+    /**
      * Read value in the given time duration, usually as a linear.
      *
      * @param labels the labels you need to query.

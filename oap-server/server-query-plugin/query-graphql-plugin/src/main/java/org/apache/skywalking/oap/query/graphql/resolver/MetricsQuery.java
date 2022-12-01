@@ -142,6 +142,16 @@ public class MetricsQuery implements GraphQLQueryResolver {
     }
 
     /**
+     * Read time-series values in the duration of required metrics which is not 0
+     */
+    public MetricsValues readNonZeroMetricsValues(MetricsCondition condition, Duration duration) throws IOException {
+        if (MetricsType.UNKNOWN.equals(typeOfMetrics(condition.getName())) || !condition.getEntity().isValid()) {
+            return new MetricsValues();
+        }
+        return getMetricsQueryService().readNonZeroMetricsValues(condition, duration);
+    }
+
+    /**
      * Read entity list of required metrics and parent entity type.
      */
     public List<SelectedRecord> sortMetrics(TopNCondition condition, Duration duration) throws IOException {
