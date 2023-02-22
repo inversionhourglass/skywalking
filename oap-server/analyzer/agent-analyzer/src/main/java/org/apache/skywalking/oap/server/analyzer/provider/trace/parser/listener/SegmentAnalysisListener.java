@@ -85,6 +85,15 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
             );
         }
 
+        if (span.getStartTime() > 0) {
+            startTimestamp = span.getStartTime();
+        }
+        if (span.getEndTime() > 0) {
+            endTimestamp = span.getEndTime();
+        }
+        final long accurateDuration = endTimestamp - startTimestamp;
+        duration = accurateDuration > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) accurateDuration;
+
         long timeBucket = TimeBucket.getRecordTimeBucket(startTimestamp);
 
         segment.setSegmentId(segmentObject.getTraceSegmentId());
@@ -104,6 +113,16 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
             serviceId,
             endpointName
         );
+
+        if (sampleStatus.equals(SAMPLE_STATUS.UNKNOWN) || sampleStatus.equals(SAMPLE_STATUS.IGNORE)) {
+            if (sampler.shouldSample(segmentObject, duration)) {
+                sampleStatus = SAMPLE_STATUS.SAMPLED;
+            } else if (isError && forceSampleErrorSegment) {
+                sampleStatus = SAMPLE_STATUS.SAMPLED;
+            } else {
+                sampleStatus = SAMPLE_STATUS.IGNORE;
+            }
+        }
     }
 
     @Override
@@ -134,18 +153,6 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
             isError = isError || segmentStatusAnalyzer.isError(span);
             appendSearchableTags(span);
         });
-        final long accurateDuration = endTimestamp - startTimestamp;
-        duration = accurateDuration > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) accurateDuration;
-
-        if (sampleStatus.equals(SAMPLE_STATUS.UNKNOWN) || sampleStatus.equals(SAMPLE_STATUS.IGNORE)) {
-            if (sampler.shouldSample(segmentObject, duration)) {
-                sampleStatus = SAMPLE_STATUS.SAMPLED;
-            } else if (isError && forceSampleErrorSegment) {
-                sampleStatus = SAMPLE_STATUS.SAMPLED;
-            } else {
-                sampleStatus = SAMPLE_STATUS.IGNORE;
-            }
-        }
     }
 
     private void appendSearchableTags(SpanObject span) {
