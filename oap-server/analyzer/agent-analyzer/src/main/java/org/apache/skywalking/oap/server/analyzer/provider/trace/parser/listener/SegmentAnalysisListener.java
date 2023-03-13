@@ -48,6 +48,7 @@ import org.apache.skywalking.oap.server.library.util.BooleanUtils;
 @Slf4j
 @RequiredArgsConstructor
 public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnalysisListener, SegmentListener {
+    private static final String TAG_HAS_ERROR = "has_error";
     private final SourceReceiver sourceReceiver;
     private final TraceSegmentSampler sampler;
     private final boolean forceSampleErrorSegment;
@@ -65,6 +66,7 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
     private long endTimestamp;
     private int duration;
     private boolean isError;
+    private boolean hasError;
 
     @Override
     public boolean containsPoint(Point point) {
@@ -151,8 +153,12 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
                 endTimestamp = span.getEndTime();
             }
             isError = isError || segmentStatusAnalyzer.isError(span);
+            hasError = hasError || span.getIsError();
             appendSearchableTags(span);
         });
+        if (segment.getTags().stream().noneMatch(t -> t.getKey().equals(TAG_HAS_ERROR))) {
+            segment.getTags().add(new Tag(TAG_HAS_ERROR, String.valueOf(hasError)));
+        }
     }
 
     private void appendSearchableTags(SpanObject span) {
