@@ -48,6 +48,7 @@ import org.apache.skywalking.oap.server.library.util.BooleanUtils;
 @Slf4j
 @RequiredArgsConstructor
 public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnalysisListener, SegmentListener {
+    private static final String TAG_HAS_ERROR = "has_error";
     private final SourceReceiver sourceReceiver;
     private final TraceSegmentSampler sampler;
     private final boolean forceSampleErrorSegment;
@@ -65,6 +66,7 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
     private long endTimestamp;
     private int duration;
     private boolean isError;
+    private boolean hasError;
 
     @Override
     public boolean containsPoint(Point point) {
@@ -85,6 +87,15 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
             );
         }
 
+        if (span.getStartTime() > 0) {
+            startTimestamp = span.getStartTime();
+        }
+        if (span.getEndTime() > 0) {
+            endTimestamp = span.getEndTime();
+        }
+        final long accurateDuration = endTimestamp - startTimestamp;
+        duration = accurateDuration > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) accurateDuration;
+
         long timeBucket = TimeBucket.getRecordTimeBucket(startTimestamp);
 
         segment.setSegmentId(segmentObject.getTraceSegmentId());
@@ -104,6 +115,16 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
             serviceId,
             endpointName
         );
+
+        if (sampleStatus.equals(SAMPLE_STATUS.UNKNOWN) || sampleStatus.equals(SAMPLE_STATUS.IGNORE)) {
+            if (sampler.shouldSample(segmentObject, duration)) {
+                sampleStatus = SAMPLE_STATUS.SAMPLED;
+            } else if (isError && forceSampleErrorSegment) {
+                sampleStatus = SAMPLE_STATUS.SAMPLED;
+            } else {
+                sampleStatus = SAMPLE_STATUS.IGNORE;
+            }
+        }
     }
 
     @Override
@@ -132,19 +153,11 @@ public class SegmentAnalysisListener implements FirstAnalysisListener, EntryAnal
                 endTimestamp = span.getEndTime();
             }
             isError = isError || segmentStatusAnalyzer.isError(span);
+            hasError = hasError || span.getIsError();
             appendSearchableTags(span);
         });
-        final long accurateDuration = endTimestamp - startTimestamp;
-        duration = accurateDuration > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) accurateDuration;
-
-        if (sampleStatus.equals(SAMPLE_STATUS.UNKNOWN) || sampleStatus.equals(SAMPLE_STATUS.IGNORE)) {
-            if (sampler.shouldSample(segmentObject, duration)) {
-                sampleStatus = SAMPLE_STATUS.SAMPLED;
-            } else if (isError && forceSampleErrorSegment) {
-                sampleStatus = SAMPLE_STATUS.SAMPLED;
-            } else {
-                sampleStatus = SAMPLE_STATUS.IGNORE;
-            }
+        if (segment.getTags().stream().noneMatch(t -> t.getKey().equals(TAG_HAS_ERROR))) {
+            segment.getTags().add(new Tag(TAG_HAS_ERROR, String.valueOf(hasError)));
         }
     }
 
